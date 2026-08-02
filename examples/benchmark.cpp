@@ -47,38 +47,44 @@ int main() {
     std::vector<std::thread> client_threads;
     
     auto client_func = [&](int id) {
-        ipc::IPCClient client;
-        
-        // Set longer timeouts for high load
-        client.set_send_timeout(10000);
-        client.set_receive_timeout(10000);
-        
-        if (client.connect(socket_path, 10000) != ipc::Result::Success) {
-            std::cerr << "Client " << id << " failed to connect" << std::endl;
-            return;
-        }
-        
-        // Generate fixed message data (faster than random per message)
-        std::vector<uint8_t> data(MESSAGE_SIZE, static_cast<uint8_t>(id % 256));
-        
-        int consecutive_failures = 0;
-        for (int i = 0; i < MESSAGES_PER_CLIENT; ++i) {
-            auto result = client.send(data.data(), data.size());
-            if (result != ipc::Result::Success) {
-                consecutive_failures++;
-                if (consecutive_failures >= 10) {
-                    std::cerr << "Client " << id << " failed after " << i << " messages (" 
-                              << consecutive_failures << " consecutive failures)" << std::endl;
-                    break;
-                }
-                // Brief pause on failure
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            } else {
-                consecutive_failures = 0;
+        try {
+            ipc::IPCClient client;
+            
+            // Set longer timeouts for high load
+            client.set_send_timeout(10000);
+            client.set_receive_timeout(10000);
+            
+            if (client.connect(socket_path, 10000) != ipc::Result::Success) {
+                std::cerr << "Client " << id << " failed to connect" << std::endl;
+                return;
             }
+            
+            // Generate fixed message data (faster than random per message)
+            std::vector<uint8_t> data(MESSAGE_SIZE, static_cast<uint8_t>(id % 256));
+            
+            int consecutive_failures = 0;
+            for (int i = 0; i < MESSAGES_PER_CLIENT; ++i) {
+                auto result = client.send(data.data(), data.size());
+                if (result != ipc::Result::Success) {
+                    consecutive_failures++;
+                    if (consecutive_failures >= 10) {
+                        std::cerr << "Client " << id << " failed after " << i << " messages (" 
+                                  << consecutive_failures << " consecutive failures)" << std::endl;
+                        break;
+                    }
+                    // Brief pause on failure
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                } else {
+                    consecutive_failures = 0;
+                }
+            }
+            
+            client.disconnect();
+        } catch (const std::exception& e) {
+            std::cerr << "Client " << id << " exception: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Client " << id << " unknown exception" << std::endl;
         }
-        
-        client.disconnect();
     };
     
     // Start timing

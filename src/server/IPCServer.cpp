@@ -148,8 +148,8 @@ void IPCServer::stop() {
     {
         std::lock_guard<std::mutex> lock(threads_mutex_);
         for (auto& [id, thread] : client_threads_) {
-            if (thread.joinable()) {
-                thread.join();
+            if (thread && thread->joinable()) {
+                thread->join();
             }
         }
         client_threads_.clear();
@@ -222,7 +222,7 @@ void IPCServer::acceptorLoop() {
 
         // Spawn a dedicated thread for this client
         try {
-            std::thread t(&IPCServer::clientHandler, this, client_id, conn_id, client_fd);
+            auto t = std::make_unique<std::thread>(&IPCServer::clientHandler, this, client_id, conn_id, client_fd);
             std::lock_guard<std::mutex> lock(threads_mutex_);
             client_threads_[client_id] = std::move(t);
         } catch (const std::exception& e) {
@@ -271,6 +271,8 @@ void IPCServer::clientHandler(ClientId client_id, ConnectionId conn_id, int clie
         std::lock_guard<std::mutex> lock(threads_mutex_);
         client_threads_.erase(client_id);
     }
+    
+    // Thread ends here, unique_ptr will automatically join and cleanup
 }
 
 void IPCServer::processorLoop() {
