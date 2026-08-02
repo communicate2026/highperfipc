@@ -1,0 +1,52 @@
+```
+# Build artifacts
+*.o
+*.obj
+*.out
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake build directories
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# Dependencies
+third_party/
+
+# Test outputs
+tests/*.o
+tests/*_test
+tests/*_tests
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*~
+*.bak
+*.swp
+*.swo
+
+# Coverage
+coverage/
+*.gcda
+*.gcno
+*.gcov
+```
