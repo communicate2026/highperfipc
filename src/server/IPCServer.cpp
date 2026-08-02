@@ -212,7 +212,6 @@ bool IPCServer::isRunning() const {
 
 void IPCServer::networkLoop() {
     std::vector<struct epoll_event> events(EPOLL_MAX_EVENTS);
-    std::vector<uint8_t> buffer(MAX_MESSAGE_SIZE + 256);
     
     while (running_.load(std::memory_order_acquire)) {
         int nfds = epoll_wait(epoll_fd_, events.data(), EPOLL_MAX_EVENTS, EPOLL_TIMEOUT_MS);
@@ -228,15 +227,24 @@ void IPCServer::networkLoop() {
             int fd = events[i].data.fd;
             
             if (fd == server_fd_) {
-                // New connection
-                struct sockaddr_un client_addr {};
-                socklen_t client_len = sizeof(client_addr);
-                
-                int client_fd = accept4(server_fd_, 
-                    reinterpret_cast<struct sockaddr*>(&client_addr),
-                    &client_len, SOCK_NONBLOCK | O_CLOEXEC);
-                
-                if (client_fd != -1) {
+                // Accept all pending connections
+                while (running_.load(std::memory_order_acquire)) {
+                    struct sockaddr_un client_addr {};
+                    socklen_t client_len = sizeof(client_addr);
+                    
+                    int client_fd = accept4(server_fd_, 
+                        reinterpret_cast<struct sockaddr*>(&client_addr),
+                        &client_len, SOCK_NONBLOCK | O_CLOEXEC);
+                    
+                    if (client_fd == -1) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            // No more pending connections
+                            break;
+                        }
+                        // Real error
+                        break;
+                    }
+                    
                     ClientId client_id = handleNewClient(client_fd);
                     if (client_id != INVALID_CLIENT_ID) {
                         if (addToEpoll(client_fd) != Result::Success) {
@@ -251,11 +259,9 @@ void IPCServer::networkLoop() {
                 ClientId client_id = INVALID_CLIENT_ID;
                 {
                     std::lock_guard<std::mutex> lock(clients_mutex_);
-                    for (const auto& [id, info] : clients_) {
-                        if (info.fd == fd && info.active) {
-                            client_id = id;
-                            break;
-                        }
+                    auto it = clients_.find(fd);
+                    if (it != clients_.end() && it->second.active) {
+                        client_id = it->first;
                     }
                 }
                 
@@ -329,23 +335,31 @@ void IPCServer::handleClientDisconnect(ClientId client_id) {
 Result IPCServer::readFromClient(ClientId client_id, int fd) {
     std::vector<uint8_t> buffer(MAX_MESSAGE_SIZE + 256);
     
-    // Read all available messages from this client in a loop
-    while (true) {
+    // With edge-triggered epoll, we must read until EAGAIN
+    while (running_.load(std::memory_order_acquire)) {
         // Read with MSG_TRUNC to detect oversized messages
         ssize_t n = recv(fd, buffer.data(), buffer.size(), MSG_TRUNC);
         
-        if (n <= 0) {
-            if (n == 0 || errno == ECONNRESET || errno == EPIPE) {
-                handleClientDisconnect(client_id);
-            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // No more data available right now
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // No more data available - this is expected with edge-triggered
                 return Result::Success;
             }
-            return Result::Success;  // Will be handled by disconnect
+            // Real error or disconnect
+            if (errno == ECONNRESET || errno == EPIPE || errno == EBADF) {
+                handleClientDisconnect(client_id);
+            }
+            return Result::Success;
+        }
+        
+        if (n == 0) {
+            // Connection closed gracefully
+            handleClientDisconnect(client_id);
+            return Result::Success;
         }
         
         if (static_cast<size_t>(n) > MAX_MESSAGE_SIZE) {
-            // Message too large, discard
+            // Message too large, discard but continue reading
             continue;
         }
         
@@ -357,6 +371,7 @@ Result IPCServer::readFromClient(ClientId client_id, int fd) {
             if (it != clients_.end() && it->second.active) {
                 conn_id = it->second.connection_id;
             } else {
+                // Client already disconnected
                 return Result::Error;
             }
         }
@@ -365,8 +380,8 @@ Result IPCServer::readFromClient(ClientId client_id, int fd) {
         Message msg(client_id, conn_id, buffer.data(), static_cast<size_t>(n));
         
         if (!message_queue_->try_enqueue(std::move(msg))) {
-            // Queue full, message dropped
-            return Result::QueueFull;
+            // Queue full, message dropped - but continue processing other messages
+            continue;
         }
     }
     
