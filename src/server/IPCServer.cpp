@@ -329,39 +329,45 @@ void IPCServer::handleClientDisconnect(ClientId client_id) {
 Result IPCServer::readFromClient(ClientId client_id, int fd) {
     std::vector<uint8_t> buffer(MAX_MESSAGE_SIZE + 256);
     
-    // Read with MSG_TRUNC to detect oversized messages
-    ssize_t n = recv(fd, buffer.data(), buffer.size(), MSG_TRUNC);
-    
-    if (n <= 0) {
-        if (n == 0 || errno == ECONNRESET || errno == EPIPE) {
-            handleClientDisconnect(client_id);
+    // Read all available messages from this client in a loop
+    while (true) {
+        // Read with MSG_TRUNC to detect oversized messages
+        ssize_t n = recv(fd, buffer.data(), buffer.size(), MSG_TRUNC);
+        
+        if (n <= 0) {
+            if (n == 0 || errno == ECONNRESET || errno == EPIPE) {
+                handleClientDisconnect(client_id);
+            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // No more data available right now
+                return Result::Success;
+            }
+            return Result::Success;  // Will be handled by disconnect
         }
-        return Result::Success;  // Will be handled by disconnect
-    }
-    
-    if (static_cast<size_t>(n) > MAX_MESSAGE_SIZE) {
-        // Message too large, discard
-        return Result::BufferTooSmall;
-    }
-    
-    // Get connection ID
-    ConnectionId conn_id = INVALID_CONNECTION_ID;
-    {
-        std::lock_guard<std::mutex> lock(clients_mutex_);
-        auto it = clients_.find(client_id);
-        if (it != clients_.end() && it->second.active) {
-            conn_id = it->second.connection_id;
-        } else {
-            return Result::Error;
+        
+        if (static_cast<size_t>(n) > MAX_MESSAGE_SIZE) {
+            // Message too large, discard
+            continue;
         }
-    }
-    
-    // Create message and push to queue
-    Message msg(client_id, conn_id, buffer.data(), static_cast<size_t>(n));
-    
-    if (!message_queue_->try_enqueue(std::move(msg))) {
-        // Queue full, message dropped
-        return Result::QueueFull;
+        
+        // Get connection ID
+        ConnectionId conn_id = INVALID_CONNECTION_ID;
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            auto it = clients_.find(client_id);
+            if (it != clients_.end() && it->second.active) {
+                conn_id = it->second.connection_id;
+            } else {
+                return Result::Error;
+            }
+        }
+        
+        // Create message and push to queue
+        Message msg(client_id, conn_id, buffer.data(), static_cast<size_t>(n));
+        
+        if (!message_queue_->try_enqueue(std::move(msg))) {
+            // Queue full, message dropped
+            return Result::QueueFull;
+        }
     }
     
     return Result::Success;
