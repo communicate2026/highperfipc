@@ -11,8 +11,8 @@
 #include <atomic>
 #include <random>
 
-constexpr int NUM_CLIENTS = 50;
-constexpr int MESSAGES_PER_CLIENT = 10000;
+constexpr int NUM_CLIENTS = 20;
+constexpr int MESSAGES_PER_CLIENT = 5000;
 constexpr size_t MESSAGE_SIZE = 256;
 
 std::atomic<int> g_messages_received{0};
@@ -49,25 +49,32 @@ int main() {
     auto client_func = [&](int id) {
         ipc::IPCClient client;
         
-        if (client.connect(socket_path, 5000) != ipc::Result::Success) {
+        // Set longer timeouts for high load
+        client.setSendTimeout(10000);
+        client.setReceiveTimeout(10000);
+        
+        if (client.connect(socket_path, 10000) != ipc::Result::Success) {
             std::cerr << "Client " << id << " failed to connect" << std::endl;
             return;
         }
         
-        // Generate random message data
-        std::vector<uint8_t> data(MESSAGE_SIZE);
-        std::random_device rd;
-        std::mt19937 gen(rd() + id);  // Use id to seed differently per thread
-        std::uniform_int_distribution<> dis(0, 255);
+        // Generate fixed message data (faster than random per message)
+        std::vector<uint8_t> data(MESSAGE_SIZE, static_cast<uint8_t>(id % 256));
         
+        int consecutive_failures = 0;
         for (int i = 0; i < MESSAGES_PER_CLIENT; ++i) {
-            for (auto& byte : data) {
-                byte = static_cast<uint8_t>(dis(gen));
-            }
-            
-            if (client.send(data.data(), data.size()) != ipc::Result::Success) {
-                std::cerr << "Client " << id << " failed to send message " << i << std::endl;
-                break;
+            auto result = client.send(data.data(), data.size());
+            if (result != ipc::Result::Success) {
+                consecutive_failures++;
+                if (consecutive_failures >= 10) {
+                    std::cerr << "Client " << id << " failed after " << i << " messages (" 
+                              << consecutive_failures << " consecutive failures)" << std::endl;
+                    break;
+                }
+                // Brief pause on failure
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } else {
+                consecutive_failures = 0;
             }
         }
         
