@@ -23,7 +23,7 @@ constexpr size_t DEFAULT_BUFFER_SIZE = MAX_MESSAGE_SIZE + 256;
 
 // epoll configuration
 constexpr int EPOLL_MAX_EVENTS = 64;
-constexpr int EPOLL_TIMEOUT_MS = 1000;
+constexpr int EPOLL_TIMEOUT_MS = 100;  // Reduced for faster response
 
 // Timeouts
 constexpr long DEFAULT_SEND_TIMEOUT = 5000;
