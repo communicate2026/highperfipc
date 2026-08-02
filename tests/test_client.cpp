@@ -13,12 +13,12 @@ void test_client_connect_disconnect() {
     std::cout << "Test: Client connect/disconnect... ";
     
     ipc::IPCClient client;
-    assert(!client.isConnected());
+    assert(!client.is_connected());
     
     // Try to connect to non-existent server (should fail)
     auto result = client.connect("/tmp/nonexistent.sock", 100);
     assert(result != ipc::Result::Success);
-    assert(!client.isConnected());
+    assert(!client.is_connected());
     
     std::cout << "PASSED" << std::endl;
 }
@@ -35,7 +35,7 @@ void test_client_with_server() {
     // Connect client
     ipc::IPCClient client;
     assert(client.connect(socket_path, 1000) == ipc::Result::Success);
-    assert(client.isConnected());
+    assert(client.is_connected());
     
     // Send message
     std::string msg = "hello";
@@ -43,7 +43,7 @@ void test_client_with_server() {
     
     // Disconnect
     assert(client.disconnect() == ipc::Result::Success);
-    assert(!client.isConnected());
+    assert(!client.is_connected());
     
     server.stop();
     std::cout << "PASSED" << std::endl;
@@ -61,7 +61,7 @@ void test_client_send_timeout() {
     assert(client.connect(socket_path, 1000) == ipc::Result::Success);
     
     // Set very short timeout
-    client.setSendTimeout(1);
+    client.set_send_timeout(1);
     
     // Disconnect server to cause timeout
     server.stop();
@@ -90,7 +90,7 @@ void test_client_reconnect() {
     // Stop server
     server.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    assert(!client.isConnected());
+    assert(!client.is_connected());
     
     // Restart server
     assert(server.start(socket_path) == ipc::Result::Success);
@@ -98,7 +98,7 @@ void test_client_reconnect() {
     
     // Reconnect
     assert(client.reconnect() == ipc::Result::Success);
-    assert(client.isConnected());
+    assert(client.is_connected());
     
     client.disconnect();
     server.stop();

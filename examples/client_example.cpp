@@ -19,7 +19,7 @@ int main() {
     std::cout << "Connecting to: " << socket_path << std::endl;
     
     if (client.connect(socket_path, 5000) != ipc::Result::Success) {
-        std::cerr << "Failed to connect: " << client.getLastError().message() << std::endl;
+        std::cerr << "Failed to connect: " << "error" << std::endl;
         return 1;
     }
     
@@ -40,13 +40,13 @@ int main() {
     
     // Test auto-reconnect
     std::cout << "\nEnabling auto-reconnect..." << std::endl;
-    client.enableAutoReconnect(true);
+    client.enable_auto_reconnect(true);
     
     // Simulate sending more messages
     for (int i = 10; i < 20; ++i) {
         std::string message = "Message #" + std::to_string(i);
         
-        if (!client.isConnected()) {
+        if (!client.is_connected()) {
             std::cout << "Disconnected, waiting for reconnect..." << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;

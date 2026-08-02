@@ -6,39 +6,45 @@
 #ifndef IPC_COMMON_TYPES_H
 #define IPC_COMMON_TYPES_H
 
-#include <cstdint>
 #include <functional>
-#include <string_view>
 #include <span>
+#include <cstdint>
 
 namespace ipc {
 
-// Unique identifier for a client process
+// Forward declarations from Constants.h
 using ClientId = uint64_t;
-
-// Unique identifier for a connection (a client may reconnect with same ClientId)
 using ConnectionId = uint64_t;
 
-// Message callback type
+/**
+ * @brief Callback function type for received messages
+ * @param client_id ID of the client that sent the message
+ * @param data Message payload as a span
+ */
 using MessageCallback = std::function<void(ClientId client_id, std::span<const uint8_t> data)>;
 
-// Result codes
+/**
+ * @brief Result codes for IPC operations
+ */
 enum class Result {
     Success = 0,
-    Error = -1,
-    Timeout = -2,
-    Disconnected = -3,
-    InvalidState = -4,
-    BufferTooSmall = -5,
-    QueueFull = -6
-};
-
-// Connection state
-enum class ConnectionState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Reconnecting
+    ErrorAlreadyRunning,
+    ErrorNotRunning,
+    ErrorSocketCreation,
+    ErrorSocketOption,
+    ErrorBind,
+    ErrorListen,
+    ErrorConnect,
+    ErrorSend,
+    ErrorRecv,
+    ErrorDisconnect,
+    ErrorTimeout,
+    ErrorPathTooLong,
+    ErrorEpollCreate,
+    ErrorEpollCtl,
+    ErrorQueueFull,
+    ErrorInvalidState,
+    ErrorUnknown
 };
 
 } // namespace ipc

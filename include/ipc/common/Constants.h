@@ -14,21 +14,17 @@ namespace ipc {
 // Socket configuration
 constexpr size_t MAX_SOCKET_PATH = 108;  // Unix domain socket path limit
 constexpr int SOCKET_BACKLOG = 256;       // Listen backlog
-constexpr int MAX_CLIENTS = 512;          // Maximum concurrent clients (support 200+)
+constexpr size_t MAX_CONCURRENT_CLIENTS = 512;  // Maximum concurrent clients (support 200+)
 
 // Message configuration
 constexpr size_t MIN_MESSAGE_SIZE = 10;
-constexpr size_t MAX_MESSAGE_SIZE = 8192;  // 8 KB
-constexpr size_t DEFAULT_BUFFER_SIZE = MAX_MESSAGE_SIZE + 256;
-
-// epoll configuration
-constexpr int EPOLL_MAX_EVENTS = 64;
-constexpr int EPOLL_TIMEOUT_MS = 100;  // Reduced for faster response
+constexpr size_t MAX_PACKET_SIZE = 8192;  // 8 KB
+constexpr size_t DEFAULT_BUFFER_SIZE = MAX_PACKET_SIZE + 256;
 
 // Timeouts
-constexpr long DEFAULT_SEND_TIMEOUT = 5000;
-constexpr long DEFAULT_RECV_TIMEOUT = 5000;
-constexpr long DEFAULT_CONNECT_TIMEOUT = 5000;
+constexpr long DEFAULT_SEND_TIMEOUT_MS = 5000;
+constexpr long DEFAULT_RECV_TIMEOUT_MS = 5000;
+constexpr long DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 constexpr std::chrono::milliseconds RECONNECT_INTERVAL{100};
 constexpr std::chrono::milliseconds SHUTDOWN_TIMEOUT{10000};
 

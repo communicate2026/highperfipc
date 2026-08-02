@@ -31,7 +31,7 @@ int main() {
     // Start server
     ipc::IPCServer server;
     
-    server.setCallback([](ipc::ClientId client_id, std::span<const uint8_t> data) {
+    server.set_callback([](ipc::ClientId client_id, std::span<const uint8_t> data) {
         g_messages_received.fetch_add(1, std::memory_order_relaxed);
     });
     
@@ -50,8 +50,8 @@ int main() {
         ipc::IPCClient client;
         
         // Set longer timeouts for high load
-        client.setSendTimeout(10000);
-        client.setReceiveTimeout(10000);
+        client.set_send_timeout(10000);
+        client.set_receive_timeout(10000);
         
         if (client.connect(socket_path, 10000) != ipc::Result::Success) {
             std::cerr << "Client " << id << " failed to connect" << std::endl;
@@ -112,7 +112,7 @@ int main() {
     std::cout << "Messages received: " << total_messages << std::endl;
     std::cout << "Throughput: " << messages_per_second << " msg/sec" << std::endl;
     std::cout << "Bandwidth: " << bytes_per_second << " MB/sec" << std::endl;
-    std::cout << "Final queue size: " << server.queueSize() << std::endl;
+    std::cout << "Final queue size: " << server.queue_size() << std::endl;
     
     // Cleanup
     server.stop();
