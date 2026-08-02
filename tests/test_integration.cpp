@@ -20,7 +20,7 @@ void test_multiple_clients() {
     std::atomic<int> message_count{0};
     
     ipc::IPCServer server;
-    server.setCallback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
+    server.set_callback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
         message_count.fetch_add(1, std::memory_order_relaxed);
     });
     
@@ -68,7 +68,7 @@ void test_message_boundaries() {
     std::mutex sizes_mutex;
     
     ipc::IPCServer server;
-    server.setCallback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
+    server.set_callback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
         received_count.fetch_add(1, std::memory_order_relaxed);
         {
             std::lock_guard<std::mutex> lock(sizes_mutex);
@@ -118,7 +118,7 @@ void test_high_throughput() {
     std::atomic<int> received{0};
     
     ipc::IPCServer server;
-    server.setCallback([&](ipc::ClientId, std::span<const uint8_t>) {
+    server.set_callback([&](ipc::ClientId, std::span<const uint8_t>) {
         received.fetch_add(1, std::memory_order_relaxed);
     });
     

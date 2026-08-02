@@ -1,65 +1,44 @@
-```cpp
-# Compiled and binary files
+```
+# Compiled and build artifacts
 *.o
 *.obj
-*.a
-*.lib
-*.so
-*.dll
-*.exe
 *.out
+*.exe
+*.dll
+*.so
+*.a
 
-# Build directories
+# Dependencies
+venv/
+.venv/
+__pycache__/
+*.egg-info/
 build/
 dist/
 target/
+.gradle/
 
-# Dependencies
-node_modules/
-venv/
-.venv/
-.env
-.env.local
-*.env.*
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Logs and temp files
 *.log
 *.tmp
+*.swp
+*.swo
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment
+.env
+.env.local
+.env.*
 
-# Coverage and testing
+# Editors
+.vscode/
+.idea/
+
+# Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Python specific
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.mypy_cache/
-.pytest_cache/
-
-# Java specific
-*.class
-*.jar
-.gradle/
-
-# C/C++ specific
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-
-# Compressed files
+# Compression
 *.zip
 *.gz
 *.tar
@@ -78,8 +57,4 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```

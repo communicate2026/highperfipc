@@ -13,16 +13,16 @@ void test_server_start_stop() {
     std::cout << "Test: Server start/stop... ";
     
     ipc::IPCServer server;
-    assert(!server.isRunning());
+    assert(!server.is_running());
     
     const std::string socket_path = "/tmp/test_server_1.sock";
     assert(server.start(socket_path) == ipc::Result::Success);
-    assert(server.isRunning());
+    assert(server.is_running());
     
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     assert(server.stop() == ipc::Result::Success);
-    assert(!server.isRunning());
+    assert(!server.is_running());
     
     std::cout << "PASSED" << std::endl;
 }
@@ -48,7 +48,7 @@ void test_server_callback() {
     
     std::atomic<int> message_count{0};
     
-    server.setCallback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
+    server.set_callback([&](ipc::ClientId client_id, std::span<const uint8_t> data) {
         message_count.fetch_add(1, std::memory_order_relaxed);
     });
     
@@ -80,7 +80,7 @@ void test_server_client_count() {
     const std::string socket_path = "/tmp/test_server_4.sock";
     
     assert(server.start(socket_path) == ipc::Result::Success);
-    assert(server.clientCount() == 0);
+    assert(server.client_count() == 0);
     
     // Connect multiple clients
     std::vector<ipc::IPCClient> clients(5);
@@ -89,17 +89,17 @@ void test_server_client_count() {
     }
     
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    assert(server.clientCount() == 5);
+    assert(server.client_count() == 5);
     
     // Disconnect some
     clients[0].disconnect();
     clients[1].disconnect();
     
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    assert(server.clientCount() == 3);
+    assert(server.client_count() == 3);
     
     for (auto& c : clients) {
-        if (c.isConnected()) c.disconnect();
+        if (c.is_connected()) c.disconnect();
     }
     server.stop();
     
