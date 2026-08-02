@@ -149,7 +149,7 @@ private:
     std::unordered_map<ClientId, ClientInfo> clients_;
     mutable std::mutex clients_mutex_;
     
-    std::unordered_map<ClientId, std::thread> client_threads_;
+    std::unordered_map<ClientId, std::unique_ptr<std::thread>> client_threads_;
     mutable std::mutex threads_mutex_;
     
     // Callback
