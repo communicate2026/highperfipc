@@ -33,7 +33,7 @@ constexpr std::chrono::milliseconds RECONNECT_INTERVAL{100};
 constexpr std::chrono::milliseconds SHUTDOWN_TIMEOUT{10000};
 
 // Queue configuration
-constexpr size_t DEFAULT_QUEUE_CAPACITY = 100000;
+constexpr size_t DEFAULT_QUEUE_CAPACITY = 1000000;  // Increased for high throughput
 
 // Client identification
 using ClientId = uint64_t;

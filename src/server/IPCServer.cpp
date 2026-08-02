@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <stdexcept>
+#include <atomic>
 
 // Include concurrent queue
 #include "concurrentqueue.h"
@@ -31,7 +32,7 @@ IPCServer::~IPCServer() {
 
 IPCServer::IPCServer(IPCServer&& other) noexcept
     : socket_path_(std::move(other.socket_path_))
-    , queue_capacity_(other.queue_capacity_.exchange(0))
+    , queue_capacity_(std::exchange(other.queue_capacity_, 0))
     , running_(other.running_.load())
     , stopped_(other.stopped_.load())
     , server_fd_(other.server_fd_)
@@ -48,7 +49,6 @@ IPCServer::IPCServer(IPCServer&& other) noexcept
     
     other.server_fd_ = INVALID_FD;
     other.epoll_fd_ = INVALID_FD;
-    other.queue_capacity_ = 0;
 }
 
 IPCServer& IPCServer::operator=(IPCServer&& other) noexcept {
@@ -56,7 +56,7 @@ IPCServer& IPCServer::operator=(IPCServer&& other) noexcept {
         stop();
         
         socket_path_ = std::move(other.socket_path_);
-        queue_capacity_ = other.queue_capacity_.exchange(0);
+        queue_capacity_ = std::exchange(other.queue_capacity_, 0);
         running_ = other.running_.load();
         stopped_ = other.stopped_.load();
         server_fd_ = other.server_fd_;
@@ -83,7 +83,6 @@ IPCServer& IPCServer::operator=(IPCServer&& other) noexcept {
         
         other.server_fd_ = INVALID_FD;
         other.epoll_fd_ = INVALID_FD;
-        other.queue_capacity_ = 0;
     }
     return *this;
 }
@@ -235,7 +234,7 @@ void IPCServer::networkLoop() {
                 
                 int client_fd = accept4(server_fd_, 
                     reinterpret_cast<struct sockaddr*>(&client_addr),
-                    &client_len, SOCK_NONBLOCK | CLOEXEC);
+                    &client_len, SOCK_NONBLOCK | O_CLOEXEC);
                 
                 if (client_fd != -1) {
                     ClientId client_id = handleNewClient(client_fd);

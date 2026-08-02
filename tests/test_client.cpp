@@ -39,7 +39,7 @@ void test_client_with_server() {
     
     // Send message
     std::string msg = "hello";
-    assert(client.send(std::as_bytes(std::span{msg})) == ipc::Result::Success);
+    assert(client.send(reinterpret_cast<const uint8_t*>(msg.data()), msg.size()) == ipc::Result::Success);
     
     // Disconnect
     assert(client.disconnect() == ipc::Result::Success);
@@ -68,7 +68,7 @@ void test_client_send_timeout() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     std::string msg = "test";
-    auto result = client.send(std::as_bytes(std::span{msg}));
+    auto result = client.send(reinterpret_cast<const uint8_t*>(msg.data()), msg.size());
     assert(result == ipc::Result::Disconnected || result == ipc::Result::Error);
     
     std::cout << "PASSED" << std::endl;
