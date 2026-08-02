@@ -132,7 +132,7 @@ void test_high_throughput() {
     
     std::string msg = "throughput test";
     for (int i = 0; i < NUM_MESSAGES; ++i) {
-        if (client.send(std::as_bytes(std::span{msg})) != ipc::Result::Success) {
+        if (client.send(reinterpret_cast<const uint8_t*>(msg.data()), msg.size()) != ipc::Result::Success) {
             break;
         }
     }

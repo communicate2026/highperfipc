@@ -45,12 +45,11 @@ int main() {
     
     // Create clients
     std::vector<std::thread> client_threads;
-    std::vector<std::unique_ptr<ipc::IPCClient>> clients(NUM_CLIENTS);
     
     auto client_func = [&](int id) {
-        clients[id] = std::make_unique<ipc::IPCClient>();
+        ipc::IPCClient client;
         
-        if (clients[id]->connect(socket_path, 5000) != ipc::Result::Success) {
+        if (client.connect(socket_path, 5000) != ipc::Result::Success) {
             std::cerr << "Client " << id << " failed to connect" << std::endl;
             return;
         }
@@ -58,7 +57,7 @@ int main() {
         // Generate random message data
         std::vector<uint8_t> data(MESSAGE_SIZE);
         std::random_device rd;
-        std::mt19937 gen(rd());
+        std::mt19937 gen(rd() + id);  // Use id to seed differently per thread
         std::uniform_int_distribution<> dis(0, 255);
         
         for (int i = 0; i < MESSAGES_PER_CLIENT; ++i) {
@@ -66,13 +65,13 @@ int main() {
                 byte = static_cast<uint8_t>(dis(gen));
             }
             
-            if (clients[id]->send(data) != ipc::Result::Success) {
+            if (client.send(data.data(), data.size()) != ipc::Result::Success) {
                 std::cerr << "Client " << id << " failed to send message " << i << std::endl;
                 break;
             }
         }
         
-        clients[id]->disconnect();
+        client.disconnect();
     };
     
     // Start timing

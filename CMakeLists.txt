@@ -97,15 +97,20 @@ install(DIRECTORY include/ DESTINATION include)
 if(BUILD_TESTS)
     enable_testing()
     
-    add_executable(ipc_tests
-        tests/test_server.cpp
-        tests/test_client.cpp
-        tests/test_integration.cpp
-    )
+    # Server tests
+    add_executable(test_server tests/test_server.cpp)
+    target_link_libraries(test_server PRIVATE ipc)
+    add_test(NAME ServerTests COMMAND test_server)
     
-    target_link_libraries(ipc_tests PRIVATE ipc)
+    # Client tests
+    add_executable(test_client tests/test_client.cpp)
+    target_link_libraries(test_client PRIVATE ipc)
+    add_test(NAME ClientTests COMMAND test_client)
     
-    add_test(NAME IPCTests COMMAND ipc_tests)
+    # Integration tests
+    add_executable(test_integration tests/test_integration.cpp)
+    target_link_libraries(test_integration PRIVATE ipc)
+    add_test(NAME IntegrationTests COMMAND test_integration)
 endif()
 
 # Examples

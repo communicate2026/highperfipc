@@ -29,7 +29,7 @@ int main() {
     for (int i = 0; i < 10; ++i) {
         std::string message = "Hello from client! Message #" + std::to_string(i);
         
-        if (client.send(std::as_bytes(std::span{message})) != ipc::Result::Success) {
+        if (client.send(reinterpret_cast<const uint8_t*>(message.data()), message.size()) != ipc::Result::Success) {
             std::cerr << "Failed to send message " << i << std::endl;
             break;
         }
@@ -52,7 +52,7 @@ int main() {
             continue;
         }
         
-        if (client.send(std::as_bytes(std::span{message})) == ipc::Result::Success) {
+        if (client.send(reinterpret_cast<const uint8_t*>(message.data()), message.size()) == ipc::Result::Success) {
             std::cout << "Sent: " << message << std::endl;
         }
         
