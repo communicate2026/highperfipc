@@ -15,6 +15,7 @@
 #include <random>
 #include <chrono>
 #include <system_error>
+#include <atomic>
 
 namespace ipc {
 namespace utils {

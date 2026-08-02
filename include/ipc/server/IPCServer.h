@@ -24,11 +24,8 @@
 #include <unordered_map>
 #include <mutex>
 
-// Forward declaration of concurrent queue
-namespace moodycamel {
-    template<typename T>
-    class ConcurrentQueue;
-}
+// Include concurrent queue before forward declarations
+#include "concurrentqueue.h"
 
 namespace ipc {
 

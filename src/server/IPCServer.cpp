@@ -15,7 +15,7 @@
 #include <stdexcept>
 
 // Include concurrent queue
-#include "concurrentqueue/concurrentqueue.h"
+#include "concurrentqueue.h"
 
 namespace ipc {
 
