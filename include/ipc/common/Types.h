@@ -13,6 +13,12 @@
 
 namespace ipc {
 
+// Unique identifier for a client process
+using ClientId = uint64_t;
+
+// Unique identifier for a connection (a client may reconnect with same ClientId)
+using ConnectionId = uint64_t;
+
 // Message callback type
 using MessageCallback = std::function<void(ClientId client_id, std::span<const uint8_t> data)>;
 

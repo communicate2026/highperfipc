@@ -178,10 +178,10 @@ private:
 private:
     // Configuration
     std::string socket_path_;
-    std::chrono::milliseconds send_timeout_{DEFAULT_SEND_TIMEOUT};
-    std::chrono::milliseconds recv_timeout_{DEFAULT_RECV_TIMEOUT};
-    std::chrono::milliseconds connect_timeout_{DEFAULT_CONNECT_TIMEOUT};
-    bool auto_reconnect_{false};
+    std::atomic<long> send_timeout_{DEFAULT_SEND_TIMEOUT};
+    std::atomic<long> recv_timeout_{DEFAULT_RECV_TIMEOUT};
+    std::atomic<long> connect_timeout_{DEFAULT_CONNECT_TIMEOUT};
+    std::atomic<bool> auto_reconnect_{false};
     
     // State
     std::atomic<ConnectionState> state_{ConnectionState::Disconnected};

@@ -26,9 +26,9 @@ constexpr int EPOLL_MAX_EVENTS = 64;
 constexpr int EPOLL_TIMEOUT_MS = 1000;
 
 // Timeouts
-constexpr std::chrono::milliseconds DEFAULT_SEND_TIMEOUT{5000};
-constexpr std::chrono::milliseconds DEFAULT_RECV_TIMEOUT{5000};
-constexpr std::chrono::milliseconds DEFAULT_CONNECT_TIMEOUT{5000};
+constexpr long DEFAULT_SEND_TIMEOUT = 5000;
+constexpr long DEFAULT_RECV_TIMEOUT = 5000;
+constexpr long DEFAULT_CONNECT_TIMEOUT = 5000;
 constexpr std::chrono::milliseconds RECONNECT_INTERVAL{100};
 constexpr std::chrono::milliseconds SHUTDOWN_TIMEOUT{10000};
 

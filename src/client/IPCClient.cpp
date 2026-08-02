@@ -46,17 +46,17 @@ IPCClient& IPCClient::operator=(IPCClient&& other) noexcept {
         disconnect();
         
         socket_path_ = std::move(other.socket_path_);
-        send_timeout_ = other.send_timeout_.load();
-        recv_timeout_ = other.recv_timeout_.load();
-        connect_timeout_ = other.connect_timeout_.load();
-        auto_reconnect_ = other.auto_reconnect_.load();
-        state_ = other.state_.load();
-        stop_reconnect_ = other.stop_reconnect_.load();
+        send_timeout_.store(other.send_timeout_.load(), std::memory_order_relaxed);
+        recv_timeout_.store(other.recv_timeout_.load(), std::memory_order_relaxed);
+        connect_timeout_.store(other.connect_timeout_.load(), std::memory_order_relaxed);
+        auto_reconnect_.store(other.auto_reconnect_.load(), std::memory_order_relaxed);
+        state_.store(other.state_.load(), std::memory_order_relaxed);
+        stop_reconnect_.store(other.stop_reconnect_.load(), std::memory_order_relaxed);
         socket_fd_ = other.socket_fd_;
         last_error_ = other.last_error_;
         reconnect_thread_ = std::move(other.reconnect_thread_);
-        client_id_ = other.client_id_.load();
-        connection_id_ = other.connection_id_.load();
+        client_id_.store(other.client_id_.load(), std::memory_order_relaxed);
+        connection_id_.store(other.connection_id_.load(), std::memory_order_relaxed);
         
         other.socket_fd_ = INVALID_FD;
         other.stop_reconnect_.store(true, std::memory_order_release);
@@ -65,7 +65,7 @@ IPCClient& IPCClient::operator=(IPCClient&& other) noexcept {
 }
 
 Result IPCClient::connect(std::string_view socket_path) {
-    return connect(socket_path, connect_timeout_.count());
+    return connect(socket_path, static_cast<int>(connect_timeout_.load()));
 }
 
 Result IPCClient::connect(std::string_view socket_path, int timeout_ms) {
@@ -73,7 +73,7 @@ Result IPCClient::connect(std::string_view socket_path, int timeout_ms) {
 }
 
 Result IPCClient::connect(std::string_view socket_path, bool blocking) {
-    return connectInternal(socket_path, connect_timeout_.count(), blocking);
+    return connectInternal(socket_path, static_cast<int>(connect_timeout_.load()), blocking);
 }
 
 Result IPCClient::connectInternal(std::string_view socket_path, 
@@ -175,8 +175,9 @@ Result IPCClient::send(std::span<const uint8_t> data) {
     
     // Set send timeout
     struct timeval tv {};
-    tv.tv_sec = send_timeout_.count() / 1000;
-    tv.tv_usec = (send_timeout_.count() % 1000) * 1000;
+    auto timeout_ms = send_timeout_.load(std::memory_order_relaxed);
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     
     // Send with MSG_EOR to mark end of record (important for SOCK_SEQPACKET)
@@ -209,15 +210,15 @@ bool IPCClient::isConnected() const {
 }
 
 void IPCClient::setSendTimeout(int milliseconds) {
-    send_timeout_ = std::chrono::milliseconds(milliseconds);
+    send_timeout_.store(milliseconds, std::memory_order_relaxed);
 }
 
 void IPCClient::setReceiveTimeout(int milliseconds) {
-    recv_timeout_ = std::chrono::milliseconds(milliseconds);
+    recv_timeout_.store(milliseconds, std::memory_order_relaxed);
 }
 
 void IPCClient::enableAutoReconnect(bool enable) {
-    auto_reconnect_ = enable;
+    auto_reconnect_.store(enable, std::memory_order_relaxed);
     
     if (enable && !isConnected()) {
         stop_reconnect_.store(false, std::memory_order_release);
@@ -247,7 +248,7 @@ void IPCClient::reconnectLoop() {
         }
         
         if (state_.load(std::memory_order_acquire) != ConnectionState::Connected) {
-            Result result = connectInternal(socket_path_, connect_timeout_.count(), false);
+            Result result = connectInternal(socket_path_, static_cast<int>(connect_timeout_.load()), false);
             
             if (result == Result::Success) {
                 break;
