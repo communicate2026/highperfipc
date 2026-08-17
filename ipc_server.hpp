@@ -147,7 +147,9 @@ private:
 
     /* Callback stored via shared_ptr for lock-free reads */
     using CallbackFn = std::function<void(const Message&)>;
+    using BatchCallbackFn = std::function<void(const std::vector<Message>&)>;
     std::shared_ptr<CallbackFn> callback_ptr;  /* atomic ops via std::atomic_load/store */
+    std::shared_ptr<BatchCallbackFn> batch_callback_ptr;  /* atomic ops via std::atomic_load/store */
     std::condition_variable callback_set_cv;
     std::mutex                   callback_set_lock;
     std::atomic<uint32_t> stats_interval_sec{1};  // Configurable interval
@@ -159,6 +161,7 @@ private:
     void        callback_loop();
     void        enqueue_message(Message&& msg);
     bool        dequeue_one(Message& out, int timeout_ms);
+    size_t      dequeue_batch(std::vector<Message>& out_messages, size_t max_count, int timeout_ms);
     void        wake_all_shards();
 
 public:
@@ -169,7 +172,9 @@ public:
     void stop();
 
     void set_message_callback(CallbackFn cb);
+    void set_batch_message_callback(BatchCallbackFn cb, size_t batch_size = 100, int batch_timeout_ms = 10);
     bool get_message(Message& msg, int timeout_ms = 100);
+    size_t get_messages(std::vector<Message>& messages, size_t max_count, int timeout_ms = 100);
     Statistics get_statistics();
     bool is_running() const { return running.load(std::memory_order_acquire); }
     void set_stats_interval(uint32_t seconds) {
@@ -201,11 +206,24 @@ bool            IPCServer_get_message(
                     uint64_t* out_timestamp_us,
                     int timeout_ms
                 );
+size_t          IPCServer_get_messages(
+                    IPCServerHandle handle,
+                    uint8_t* out_data,      /* Pointer to contiguous buffer */
+                    size_t* out_sizes,      /* Array of message sizes */
+                    uint64_t* out_timestamps, /* Array of timestamps */
+                    size_t max_count,       /* Max messages to retrieve */
+                    int timeout_ms
+                );
 void            IPCServer_get_statistics(IPCServerHandle handle, Statistics* out_stats);
 bool            IPCServer_is_running(IPCServerHandle handle);
 void            IPCServer_set_message_callback(
                     IPCServerHandle handle,
                     void (*cb)(const uint8_t* data, size_t size, uint64_t timestamp_us)
+                );
+void            IPCServer_set_batch_message_callback(
+                    IPCServerHandle handle,
+                    void (*cb)(const uint8_t** data_array, const size_t* sizes, 
+                               const uint64_t* timestamps, size_t count)
                 );
 
 #ifdef __cplusplus

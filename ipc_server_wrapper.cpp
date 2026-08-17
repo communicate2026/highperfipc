@@ -92,6 +92,49 @@ bool IPCServer_get_message(
     }
 }
 
+/* Get messages in batch */
+size_t IPCServer_get_messages(
+    IPCServerHandle handle,
+    uint8_t* out_data,      /* Contiguous buffer: msg1||msg2||... */
+    size_t* out_sizes,      /* Array of sizes */
+    uint64_t* out_timestamps, /* Array of timestamps */
+    size_t max_count,
+    int timeout_ms)
+{
+    if (!handle || !out_data || !out_sizes || !out_timestamps || max_count == 0) {
+        return 0;
+    }
+    
+    try {
+        IPCServer* server = handle_cast(handle);
+        std::vector<Message> messages;
+        
+        size_t count = server->get_messages(messages, max_count, timeout_ms);
+        if (count == 0) {
+            return 0;
+        }
+        
+        /* Copy messages to contiguous buffer */
+        uint8_t* ptr = out_data;
+        size_t offset = 0;
+        
+        for (size_t i = 0; i < count; ++i) {
+            size_t msg_size = messages[i].data.size();
+            if (msg_size > 16384) msg_size = 16384;  /* MAX_MSG_SIZE */
+            
+            out_sizes[i] = msg_size;
+            out_timestamps[i] = messages[i].timestamp_us;
+            
+            std::memcpy(ptr + offset, messages[i].data.data(), msg_size);
+            offset += msg_size;
+        }
+        
+        return count;
+    } catch (...) {
+        return 0;
+    }
+}
+
 /* Get statistics */
 void IPCServer_get_statistics(IPCServerHandle handle, Statistics* out_stats) {
     if (!handle || !out_stats) return;
@@ -147,6 +190,46 @@ void IPCServer_set_message_callback(
             [cb](const Message& msg) {
                 cb(msg.data.data(), msg.data.size(), msg.timestamp_us);
             }
+        );
+    } catch (...) {
+    }
+}
+
+/* Set batch message callback */
+void IPCServer_set_batch_message_callback(
+    IPCServerHandle handle,
+    void (*cb)(const uint8_t** data_array, const size_t* sizes, 
+               const uint64_t* timestamps, size_t count))
+{
+    if (!handle) return;
+    
+    try {
+        IPCServer* server = handle_cast(handle);
+        
+        if (!cb) {
+            /* Clear callback */
+            server->set_batch_message_callback(nullptr, 100, 10);
+            return;
+        }
+        
+        /* Wrap C callback in C++ lambda */
+        server->set_batch_message_callback(
+            [cb](const std::vector<Message>& messages) {
+                size_t count = messages.size();
+                std::vector<const uint8_t*> data_array(count);
+                std::vector<size_t> sizes(count);
+                std::vector<uint64_t> timestamps(count);
+                
+                for (size_t i = 0; i < count; ++i) {
+                    data_array[i] = messages[i].data.data();
+                    sizes[i] = messages[i].data.size();
+                    timestamps[i] = messages[i].timestamp_us;
+                }
+                
+                cb(data_array.data(), sizes.data(), timestamps.data(), count);
+            },
+            100,  /* Default batch size */
+            10    /* Default batch timeout */
         );
     } catch (...) {
     }
