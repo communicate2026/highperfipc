@@ -184,6 +184,32 @@ class IPCServer:
         ]
         self._lib.IPCServer_set_message_callback.restype = None
         self._callback_signature = callback_signature
+        
+        # Set batch message callback
+        batch_callback_signature = ctypes.CFUNCTYPE(
+            None,
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_uint8)),
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.c_size_t,
+        )
+        self._lib.IPCServer_set_batch_message_callback.argtypes = [
+            ctypes.c_void_p,
+            batch_callback_signature,
+        ]
+        self._lib.IPCServer_set_batch_message_callback.restype = None
+        self._batch_callback_signature = batch_callback_signature
+        
+        # Get messages (batch)
+        self._lib.IPCServer_get_messages.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.c_size_t,
+            ctypes.c_int,
+        ]
+        self._lib.IPCServer_get_messages.restype = ctypes.c_size_t
     
     def _create_handle(self) -> None:
         """Create the C++ server instance."""
@@ -274,6 +300,62 @@ class IPCServer:
         data = bytes(buffer[:out_size.value])
         return Message(data=data, timestamp_us=out_timestamp.value)
     
+    def get_messages(
+        self, 
+        max_count: int = 100, 
+        timeout_ms: int = 100
+    ) -> list[Message]:
+        """
+        Retrieve multiple messages from the queue in a batch.
+        
+        Args:
+            max_count: Maximum number of messages to retrieve (default: 100).
+            timeout_ms: Timeout in milliseconds (default: 100).
+        
+        Returns:
+            List of Message objects. Empty list if no messages or timeout.
+        
+        Raises:
+            IPCServerError: If the server is not initialized.
+        """
+        if not self._handle:
+            raise IPCServerError("Server handle not initialized")
+        
+        if max_count <= 0 or max_count > 10000:
+            max_count = 100
+        
+        # Allocate contiguous buffer for all message data
+        total_buffer_size = MAX_MSG_SIZE * max_count
+        buffer = (ctypes.c_uint8 * total_buffer_size)()
+        
+        # Allocate arrays for sizes and timestamps
+        sizes_array = (ctypes.c_size_t * max_count)()
+        timestamps_array = (ctypes.c_uint64 * max_count)()
+        
+        count = self._lib.IPCServer_get_messages(
+            self._handle,
+            buffer,
+            sizes_array,
+            timestamps_array,
+            max_count,
+            timeout_ms,
+        )
+        
+        if count == 0:
+            return []
+        
+        # Parse messages from contiguous buffer
+        messages = []
+        offset = 0
+        for i in range(count):
+            size = sizes_array[i]
+            timestamp = timestamps_array[i]
+            data = bytes(buffer[offset:offset + size])
+            messages.append(Message(data=data, timestamp_us=timestamp))
+            offset += size
+        
+        return messages
+    
     def get_statistics(self) -> Statistics:
         """
         Retrieve current server statistics.
@@ -333,6 +415,68 @@ class IPCServer:
         # Store reference to prevent garbage collection
         self._callback_c = self._callback_signature(c_callback)
         self._lib.IPCServer_set_message_callback(self._handle, self._callback_c)
+    
+    def set_batch_message_callback(
+        self,
+        callback: Callable[[list[bytes], list[int], list[int]], None],
+        batch_size: int = 100,
+        batch_timeout_ms: int = 10,
+    ) -> None:
+        """
+        Set a batch callback function to be invoked when messages arrive.
+        
+        The callback receives batches of messages for more efficient processing:
+            - data_array: list[bytes] - List of message data
+            - sizes: list[int] - List of message sizes
+            - timestamps: list[int] - List of message timestamps in microseconds
+        
+        Args:
+            callback: Callable that accepts (list[bytes], list[int], list[int]) parameters.
+            batch_size: Maximum number of messages per batch (default: 100).
+            batch_timeout_ms: Timeout for accumulating batch (default: 10ms).
+        
+        Raises:
+            IPCServerError: If the server is not initialized.
+        
+        Example:
+            >>> def on_batch_messages(data_list, sizes, timestamps):
+            ...     print(f"Received batch of {len(data_list)} messages")
+            >>> server.set_batch_message_callback(on_batch_messages)
+        """
+        if not self._handle:
+            raise IPCServerError("Server handle not initialized")
+        
+        self._batch_callback = callback
+        
+        # Create C batch callback wrapper that keeps Python reference
+        def c_batch_callback(
+            data_array_ptr: ctypes.POINTER(ctypes.POINTER(ctypes.c_uint8)),
+            sizes_ptr: ctypes.POINTER(ctypes.c_size_t),
+            timestamps_ptr: ctypes.POINTER(ctypes.c_uint64),
+            count: ctypes.c_size_t,
+        ) -> None:
+            try:
+                data_list = []
+                sizes = []
+                timestamps = []
+                
+                for i in range(count):
+                    data_ptr = data_array_ptr[i]
+                    size = sizes_ptr[i]
+                    ts = timestamps_ptr[i]
+                    
+                    data = bytes(ctypes.cast(data_ptr, ctypes.POINTER(ctypes.c_uint8 * size)).contents)
+                    data_list.append(data)
+                    sizes.append(size)
+                    timestamps.append(ts)
+                
+                callback(data_list, sizes, timestamps)
+            except Exception as e:
+                print(f"Error in batch message callback: {e}", file=sys.stderr)
+        
+        # Store reference to prevent garbage collection
+        self._batch_callback_c = self._batch_callback_signature(c_batch_callback)
+        self._lib.IPCServer_set_batch_message_callback(self._handle, self._batch_callback_c)
     
     def __enter__(self):
         """Context manager entry."""

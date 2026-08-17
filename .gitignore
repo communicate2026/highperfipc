@@ -1,40 +1,48 @@
-```
-# Build artifacts
+```gitignore
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Compiled files
 *.o
 *.obj
-*.a
-*.lib
 *.so
 *.dll
-*.dylib
 *.exe
+*.a
 *.out
 
-# CMake build directories
-build/
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-Makefile
-cmake_install.cmake
-compile_commands.json
+# Dependencies
+.venv/
+venv/
+node_modules/
 
-# IDE files
+# Build directories
+build/
+dist/
+target/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+*.env.*
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
 
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
 
-# System files
-.DS_Store
-Thumbs.db
+# Python specific caches
+.mypy_cache/
+.pytest_cache/
 ```
