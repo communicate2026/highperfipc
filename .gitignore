@@ -26,15 +26,23 @@ venv/
 .env.local
 *.env.*
 
-# IDE files
+# Build directories
+build/
+dist/
+target/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+*.env.*
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
 
 # Coverage
 .coverage
