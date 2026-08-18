@@ -17,9 +17,15 @@ static inline uint64_t now_us_coarse() {
            static_cast<uint64_t>(ts.tv_nsec) / 1000ULL;
 }
 
-IPCServer::IPCServer(const std::string& path)
+IPCServer::IPCServer(const std::string& path, size_t max_queue_size_val, size_t queue_drop_percent_val, size_t num_shards_val)
     : socket_path(path), server_sock(-1),
-      shards(std::make_unique<QueueShard[]>(NUM_SHARDS)) {}
+      max_queue_size(max_queue_size_val),
+      queue_drop_percent(queue_drop_percent_val),
+      num_shards(num_shards_val),
+      max_msg_size(DEFAULT_MAX_MSG_SIZE),
+      backlog(DEFAULT_BACKLOG),
+      max_events(DEFAULT_MAX_EVENTS),
+      shards(std::make_unique<QueueShard[]>(num_shards_val)) {}
 
 IPCServer::~IPCServer() {
     stop();
@@ -34,15 +40,15 @@ int IPCServer::set_nonblocking(int fd) {
 
 /* Producer: pick a shard by round-robin, enqueue with bounded drop-oldest policy */
 void IPCServer::enqueue_message(Message&& msg) {
-    uint32_t idx = rr_producer.fetch_add(1, std::memory_order_relaxed) % NUM_SHARDS;
+    uint32_t idx = rr_producer.fetch_add(1, std::memory_order_relaxed) % num_shards;
     QueueShard& sh = shards[idx];
 
-    constexpr size_t PER_SHARD_LIMIT = MAX_QUEUE_SIZE / NUM_SHARDS;
+    size_t per_shard_limit = max_queue_size / num_shards;
 
     {
         std::lock_guard<std::mutex> lk(sh.m);
-        if (sh.q.size() >= PER_SHARD_LIMIT) {
-            size_t drop_count = (PER_SHARD_LIMIT * QUEUE_DROP_PERCENT) / 100;
+        if (sh.q.size() >= per_shard_limit) {
+            size_t drop_count = (per_shard_limit * queue_drop_percent) / 100;
             if (drop_count == 0) drop_count = 1;
             for (size_t i = 0; i < drop_count && !sh.q.empty(); ++i) {
                 sh.q.pop_front();
@@ -62,8 +68,8 @@ bool IPCServer::dequeue_one(Message& out, int timeout_ms) {
     uint32_t start = rr_consumer.fetch_add(1, std::memory_order_relaxed);
 
     /* First: fast non-blocking scan of all shards */
-    for (uint32_t i = 0; i < NUM_SHARDS; ++i) {
-        QueueShard& sh = shards[(start + i) % NUM_SHARDS];
+    for (uint32_t i = 0; i < num_shards; ++i) {
+        QueueShard& sh = shards[(start + i) % num_shards];
         std::unique_lock<std::mutex> lk(sh.m, std::try_to_lock);
         if (!lk.owns_lock()) continue;
         if (!sh.q.empty()) {
@@ -75,7 +81,7 @@ bool IPCServer::dequeue_one(Message& out, int timeout_ms) {
     }
 
     /* Nothing available: block on one shard with timeout */
-    QueueShard& sh = shards[start % NUM_SHARDS];
+    QueueShard& sh = shards[start % num_shards];
     std::unique_lock<std::mutex> lk(sh.m);
     if (!sh.cv.wait_for(lk, std::chrono::milliseconds(timeout_ms),
                         [&] { return !sh.q.empty() ||
@@ -102,8 +108,8 @@ size_t IPCServer::dequeue_batch(std::vector<Message>& out_messages, size_t max_c
     uint32_t start = rr_consumer.fetch_add(1, std::memory_order_relaxed);
     size_t count = 0;
 
-    for (uint32_t i = 0; i < NUM_SHARDS && count < max_count; ++i) {
-        QueueShard& sh = shards[(start + i) % NUM_SHARDS];
+    for (uint32_t i = 0; i < num_shards && count < max_count; ++i) {
+        QueueShard& sh = shards[(start + i) % num_shards];
         std::unique_lock<std::mutex> lk(sh.m, std::try_to_lock);
         if (!lk.owns_lock()) continue;
         
@@ -120,7 +126,7 @@ size_t IPCServer::dequeue_batch(std::vector<Message>& out_messages, size_t max_c
     }
 
     /* Nothing available: block on one shard with timeout */
-    QueueShard& sh = shards[start % NUM_SHARDS];
+    QueueShard& sh = shards[start % num_shards];
     std::unique_lock<std::mutex> lk(sh.m);
     
     if (!sh.cv.wait_for(lk, std::chrono::milliseconds(timeout_ms),
@@ -142,16 +148,20 @@ size_t IPCServer::dequeue_batch(std::vector<Message>& out_messages, size_t max_c
 
 
 void IPCServer::wake_all_shards() {
-    for (int i = 0; i < NUM_SHARDS; ++i) shards[i].cv.notify_all();
+    for (int i = 0; i < num_shards; ++i) shards[i].cv.notify_all();
 }
 
-bool IPCServer::start(int num_workers) {
+bool IPCServer::start(int num_workers, size_t max_msg_size_val, int backlog_val) {
     if (running.load(std::memory_order_acquire)) {
         std::cerr << "Server already running\n";
         return false;
     }
     if (num_workers <= 0)  num_workers = 1;
     if (num_workers > 64)  num_workers = 64;
+
+    /* Update configurable parameters */
+    max_msg_size = max_msg_size_val;
+    backlog = backlog_val;
 
     /* Ignore SIGPIPE globally so a client vanishing never kills us */
     struct sigaction sa{};
@@ -170,7 +180,7 @@ bool IPCServer::start(int num_workers) {
     if (bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind"); close(server_sock); server_sock = -1; return false;
     }
-    if (listen(server_sock, BACKLOG) < 0) {
+    if (listen(server_sock, backlog) < 0) {
         perror("listen"); close(server_sock); server_sock = -1; return false;
     }
 
@@ -187,10 +197,10 @@ bool IPCServer::start(int num_workers) {
     stats_thread    = std::thread([this]() { stats_loop(); });
 
     std::cout << "IPCServer started with " << num_workers
-              << " workers, " << NUM_SHARDS << " queue shards\n"
+              << " workers, " << num_shards << " queue shards\n"
               << "Socket: " << socket_path << "\n"
-              << "Max queue: " << MAX_QUEUE_SIZE
-              << " (drop " << QUEUE_DROP_PERCENT << "% when full)\n";
+              << "Max queue: " << max_queue_size
+              << " (drop " << queue_drop_percent << "% when full)\n";
     return true;
 }
 
@@ -306,11 +316,11 @@ void IPCServer::worker_loop(int /*worker_id*/) {
     std::vector<int> owned_fds;
     owned_fds.reserve(1024);
 
-    struct epoll_event events[MAX_EVENTS];
+    struct epoll_event events[max_events];
 
     /* Reusable read buffer sits in Message.data directly to avoid extra copy */
     while (running.load(std::memory_order_acquire)) {
-        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 100);
+        int nfds = epoll_wait(epoll_fd, events, max_events, 100);
         if (nfds < 0) {
             if (errno != EINTR) perror("epoll_wait");
             continue;
@@ -359,12 +369,12 @@ void IPCServer::worker_loop(int /*worker_id*/) {
             bool close_client = false;
             for (;;) {
                 Message msg;
-                msg.data.resize(MAX_MSG_SIZE);   /* one allocation, then move */
+                msg.data.resize(max_msg_size);   /* one allocation, then move */
 
                 /* Use recvmsg to detect truncation cheaply (MSG_TRUNC flag) */
                 struct iovec iov{};
                 iov.iov_base = msg.data.data();
-                iov.iov_len  = MAX_MSG_SIZE;
+                iov.iov_len  = max_msg_size;
                 struct msghdr mh{};
                 mh.msg_iov    = &iov;
                 mh.msg_iovlen = 1;
@@ -383,7 +393,7 @@ void IPCServer::worker_loop(int /*worker_id*/) {
                 }
                 if (mh.msg_flags & MSG_TRUNC) {
                     std::cerr << "[ERROR] Truncated SEQPACKET on fd=" << fd
-                              << " (>" << MAX_MSG_SIZE << " B). Dropped.\n";
+                              << " (>" << max_msg_size << " B). Dropped.\n";
                     dropped_messages.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -522,7 +532,7 @@ void IPCServer::stats_loop() {
         if (s.dropped_messages > 0) {
             std::cout << " | DROPPED: " << s.dropped_messages;
         }
-        std::cout << " | Queue: " << s.queue_size << "/" << MAX_QUEUE_SIZE 
+        std::cout << " | Queue: " << s.queue_size << "/" << max_queue_size 
                   << " | CB calls: " << s.callback_call_count
                   << " | Get calls: " << s.get_message_count << "\n";
         std::cout.flush();

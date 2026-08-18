@@ -20,12 +20,12 @@
 #include <unistd.h>
 #include <signal.h>
 
-#define MAX_MSG_SIZE      16384
-#define BACKLOG           1024
-#define MAX_EVENTS        512
-#define MAX_QUEUE_SIZE    1000000
-#define QUEUE_DROP_PERCENT 10
-#define NUM_SHARDS        8        /* Sharded queue to reduce contention */
+#define DEFAULT_MAX_MSG_SIZE      16384
+#define DEFAULT_BACKLOG           1024
+#define DEFAULT_MAX_EVENTS        512
+#define DEFAULT_MAX_QUEUE_SIZE    1000000
+#define DEFAULT_QUEUE_DROP_PERCENT 10
+#define DEFAULT_NUM_SHARDS        8        /* Sharded queue to reduce contention */
 
 /* Cache-line padding to prevent false sharing */
 #define CACHE_LINE 64
@@ -122,6 +122,13 @@ class IPCServer {
 private:
     std::string socket_path;
     int         server_sock;
+    
+    /* Configurable parameters */
+    size_t      max_queue_size;
+    size_t      queue_drop_percent;
+    size_t      max_msg_size;
+    int         backlog;
+    size_t      max_events;
 
     /* Threading */
     std::vector<std::thread> worker_threads;
@@ -130,6 +137,7 @@ private:
 
     /* Sharded queue - reduces lock contention N-fold */
     std::unique_ptr<QueueShard[]> shards;
+    size_t                        num_shards;
     alignas(CACHE_LINE) std::atomic<uint64_t> queue_depth{0};
     std::atomic<uint32_t>         rr_producer{0};   /* round-robin producer counter */
     std::atomic<uint32_t>         rr_consumer{0};   /* round-robin consumer counter */
@@ -165,10 +173,13 @@ private:
     void        wake_all_shards();
 
 public:
-    explicit IPCServer(const std::string& path = "/tmp/ipc_seqpacket.sock");
+    explicit IPCServer(const std::string& path = "/tmp/ipc_seqpacket.sock",
+                       size_t max_queue_size = DEFAULT_MAX_QUEUE_SIZE,
+                       size_t queue_drop_percent = DEFAULT_QUEUE_DROP_PERCENT,
+                       size_t num_shards = DEFAULT_NUM_SHARDS);
     ~IPCServer();
 
-    bool start(int num_workers = 4);
+    bool start(int num_workers = 4, size_t max_msg_size = DEFAULT_MAX_MSG_SIZE, int backlog = DEFAULT_BACKLOG);
     void stop();
 
     void set_message_callback(CallbackFn cb);
@@ -183,49 +194,5 @@ public:
         stats_interval_sec.store(seconds, std::memory_order_relaxed);
     }
 };
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef void* IPCServerHandle;
-
-/* Constructor/Destructor */
-IPCServerHandle IPCServer_new(const char* socket_path);
-void            IPCServer_delete(IPCServerHandle handle);
-
-/* Methods */
-bool            IPCServer_start(IPCServerHandle handle, int num_workers);
-void            IPCServer_stop(IPCServerHandle handle);
-bool            IPCServer_get_message(
-                    IPCServerHandle handle,
-                    uint8_t* out_data,
-                    size_t* out_size,
-                    uint64_t* out_timestamp_us,
-                    int timeout_ms
-                );
-size_t          IPCServer_get_messages(
-                    IPCServerHandle handle,
-                    uint8_t* out_data,      /* Pointer to contiguous buffer */
-                    size_t* out_sizes,      /* Array of message sizes */
-                    uint64_t* out_timestamps, /* Array of timestamps */
-                    size_t max_count,       /* Max messages to retrieve */
-                    int timeout_ms
-                );
-void            IPCServer_get_statistics(IPCServerHandle handle, Statistics* out_stats);
-bool            IPCServer_is_running(IPCServerHandle handle);
-void            IPCServer_set_message_callback(
-                    IPCServerHandle handle,
-                    void (*cb)(const uint8_t* data, size_t size, uint64_t timestamp_us)
-                );
-void            IPCServer_set_batch_message_callback(
-                    IPCServerHandle handle,
-                    void (*cb)(const uint8_t** data_array, const size_t* sizes, 
-                               const uint64_t* timestamps, size_t count)
-                );
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* IPC_SERVER_HPP */
