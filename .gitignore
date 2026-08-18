@@ -1,23 +1,30 @@
-```gitignore
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
+```
 # Compiled files
 *.o
 *.obj
-*.so
-*.dll
 *.exe
+*.dll
+*.so
 *.a
 *.out
 
-# Dependencies
+# Python artifacts
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Environment files
 .venv/
 venv/
-node_modules/
+.env
+.env.local
+*.env.*
 
 # Build directories
 build/
@@ -42,7 +49,9 @@ target/
 coverage/
 htmlcov/
 
-# Python specific caches
+# MyPy
 .mypy_cache/
+
+# Pytest
 .pytest_cache/
 ```

@@ -184,8 +184,6 @@ public:
     }
 };
 
-#endif /* IPC_SERVER_HPP */
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -229,3 +227,5 @@ void            IPCServer_set_batch_message_callback(
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* IPC_SERVER_HPP */
