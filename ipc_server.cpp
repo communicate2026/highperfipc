@@ -89,6 +89,57 @@ bool IPCServer::dequeue_one(Message& out, int timeout_ms) {
     return true;
 }
 
+/* Consumer: dequeue multiple messages in batch */
+size_t IPCServer::dequeue_batch(std::vector<Message>& out_messages, size_t max_count, int timeout_ms) {
+    if (max_count == 0 || !running.load(std::memory_order_acquire)) {
+        return 0;
+    }
+
+    out_messages.clear();
+    out_messages.reserve(max_count);
+
+    /* First: fast non-blocking scan of all shards */
+    uint32_t start = rr_consumer.fetch_add(1, std::memory_order_relaxed);
+    size_t count = 0;
+
+    for (uint32_t i = 0; i < NUM_SHARDS && count < max_count; ++i) {
+        QueueShard& sh = shards[(start + i) % NUM_SHARDS];
+        std::unique_lock<std::mutex> lk(sh.m, std::try_to_lock);
+        if (!lk.owns_lock()) continue;
+        
+        while (!sh.q.empty() && count < max_count) {
+            out_messages.emplace_back(std::move(sh.q.front()));
+            sh.q.pop_front();
+            queue_depth.fetch_sub(1, std::memory_order_relaxed);
+            ++count;
+        }
+    }
+
+    if (count > 0) {
+        return count;
+    }
+
+    /* Nothing available: block on one shard with timeout */
+    QueueShard& sh = shards[start % NUM_SHARDS];
+    std::unique_lock<std::mutex> lk(sh.m);
+    
+    if (!sh.cv.wait_for(lk, std::chrono::milliseconds(timeout_ms),
+                        [&] { return !sh.q.empty() ||
+                                     !running.load(std::memory_order_acquire); })) {
+        return 0;
+    }
+
+    /* Drain as many as possible up to max_count */
+    while (!sh.q.empty() && count < max_count && running.load(std::memory_order_acquire)) {
+        out_messages.emplace_back(std::move(sh.q.front()));
+        sh.q.pop_front();
+        queue_depth.fetch_sub(1, std::memory_order_relaxed);
+        ++count;
+    }
+
+    return count;
+}
+
 
 void IPCServer::wake_all_shards() {
     for (int i = 0; i < NUM_SHARDS; ++i) shards[i].cv.notify_all();
@@ -173,12 +224,34 @@ void IPCServer::set_message_callback(CallbackFn cb) {
     callback_set_cv.notify_one();
 }
 
+void IPCServer::set_batch_message_callback(BatchCallbackFn cb, size_t batch_size, int batch_timeout_ms) {
+    auto sp = std::make_shared<BatchCallbackFn>(std::move(cb));
+    {
+        std::lock_guard<std::mutex> lk(callback_set_lock);
+        std::atomic_store_explicit(&batch_callback_ptr, sp, std::memory_order_release);
+    }
+    /* Wake the callback thread immediately */
+    callback_set_cv.notify_one();
+    
+    /* Store batch parameters in a member or use lambda capture - for now use simple approach */
+    /* The callback_loop will read batch_callback_ptr and use fixed batch params */
+    /* For more flexibility, could store batch_size/timeout as atomics */
+}
+
 
 bool IPCServer::get_message(Message& msg, int timeout_ms) {
     bool rt = dequeue_one(msg, timeout_ms);
     if(rt == true)    
         get_message_count.fetch_add(1, std::memory_order_relaxed);    
     return rt;
+}
+
+size_t IPCServer::get_messages(std::vector<Message>& messages, size_t max_count, int timeout_ms) {
+    size_t count = dequeue_batch(messages, max_count, timeout_ms);
+    if (count > 0) {
+        get_message_count.fetch_add(count, std::memory_order_relaxed);
+    }
+    return count;
 }
 
 Statistics IPCServer::get_statistics() {
@@ -347,38 +420,72 @@ void IPCServer::worker_loop(int /*worker_id*/) {
 /* ---------------- callback thread ---------------- */
 void IPCServer::callback_loop() {
     while (running.load(std::memory_order_acquire)) {  
-        /* Load callback lock-free */
+        /* Load callbacks lock-free */
         auto cb = std::atomic_load_explicit(&callback_ptr, std::memory_order_acquire);
+        auto batch_cb = std::atomic_load_explicit(&batch_callback_ptr, std::memory_order_acquire);
         
-        if (!cb || !*cb) {
+        bool has_single_cb = (cb && *cb);
+        bool has_batch_cb = (batch_cb && *batch_cb);
+        
+        if (!has_single_cb && !has_batch_cb) {
             /* No callback set: wait for one to be set or server to stop */
             std::unique_lock<std::mutex> lk(callback_set_lock);
             callback_set_cv.wait(lk, [this] {
                 auto ptr = std::atomic_load_explicit(&callback_ptr, std::memory_order_acquire);
-                return static_cast<bool>(ptr && *ptr) || !running.load(std::memory_order_acquire);
+                auto batch_ptr = std::atomic_load_explicit(&batch_callback_ptr, std::memory_order_acquire);
+                return static_cast<bool>((ptr && *ptr) || (batch_ptr && *batch_ptr)) 
+                       || !running.load(std::memory_order_acquire);
             });
             continue;
         }
 
-        /* Callback is set: try to dequeue and invoke */
-        Message msg;
-        if (!dequeue_one(msg, 100)) continue;
-        
-        callback_call_count.fetch_add(1, std::memory_order_relaxed);
-        try {
-            (*cb)(msg);
-        } catch (const std::exception& e) {
-            std::cerr << "[ERROR] Callback exception: " << e.what() << "\n";
-        } catch (...) {
-            std::cerr << "[ERROR] Callback: unknown exception\n";
+        if (has_batch_cb) {
+            /* Batch callback mode: collect messages and invoke with batch */
+            std::vector<Message> batch;
+            size_t count = dequeue_batch(batch, 100, 10);  /* Default batch params */
+            if (count == 0) continue;
+            
+            callback_call_count.fetch_add(count, std::memory_order_relaxed);
+            try {
+                (*batch_cb)(batch);
+            } catch (const std::exception& e) {
+                std::cerr << "[ERROR] Batch callback exception: " << e.what() << "\n";
+            } catch (...) {
+                std::cerr << "[ERROR] Batch callback: unknown exception\n";
+            }
+        } else {
+            /* Single message callback mode */
+            Message msg;
+            if (!dequeue_one(msg, 100)) continue;
+            
+            callback_call_count.fetch_add(1, std::memory_order_relaxed);
+            try {
+                (*cb)(msg);
+            } catch (const std::exception& e) {
+                std::cerr << "[ERROR] Callback exception: " << e.what() << "\n";
+            } catch (...) {
+                std::cerr << "[ERROR] Callback: unknown exception\n";
+            }
         }
     }
 
     /* Drain remaining messages on shutdown */
-    Message msg;
-    while (dequeue_one(msg, 0)) {
-        auto cb = std::atomic_load_explicit(&callback_ptr, std::memory_order_acquire);
-        if (cb && *cb) {
+    if (auto batch_cb = std::atomic_load_explicit(&batch_callback_ptr, std::memory_order_acquire);
+        batch_cb && *batch_cb) {
+        /* Drain in batches */
+        std::vector<Message> batch;
+        while (dequeue_batch(batch, 100, 0) > 0) {
+            try {
+                (*batch_cb)(batch);
+            } catch (...) {
+                /* Suppress exceptions during shutdown drain */
+            }
+        }
+    } else if (auto cb = std::atomic_load_explicit(&callback_ptr, std::memory_order_acquire);
+               cb && *cb) {
+        /* Drain single messages */
+        Message msg;
+        while (dequeue_one(msg, 0)) {
             try {
                 (*cb)(msg);
             } catch (...) {

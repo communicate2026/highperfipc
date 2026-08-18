@@ -1,23 +1,30 @@
 ```
-# Build artifacts
+# Compiled files
 *.o
 *.obj
-*.a
-*.lib
-*.so
-*.dll
-*.dylib
 *.exe
+*.dll
+*.so
+*.a
 *.out
 
-# CMake build directories
+# Python artifacts
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Build directories
 build/
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-Makefile
-cmake_install.cmake
-compile_commands.json
+dist/
+*.egg-info/
+
+# Environment files
+.venv/
+venv/
+.env
+.env.local
+*.env.*
 
 # IDE files
 .vscode/
@@ -30,11 +37,13 @@ compile_commands.json
 *.log
 
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
 
-# System files
-.DS_Store
-Thumbs.db
+# MyPy
+.mypy_cache/
+
+# Pytest
+.pytest_cache/
 ```
